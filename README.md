@@ -27,6 +27,17 @@ POST /mix
 ```json
 {
   "stems": [
+    "https://example.com/stem1.wav",
+    "https://example.com/stem2.wav"
+  ],
+  "volumes": [1.0, 0.8]
+}
+```
+
+**Alternative format (also supported):**
+```json
+{
+  "stems": [
     {
       "url": "https://example.com/stem1.wav"
     },
@@ -39,7 +50,7 @@ POST /mix
 ```
 
 **Parameters:**
-- `stems` (required): Array of stem objects with `url` property
+- `stems` (required): Array of URLs (strings) or objects with `url` property
 - `volumes` (optional): Array of volume levels (0.0 to 1.0+) for each stem
 
 **Response:**
@@ -56,9 +67,9 @@ const response = await fetch('https://your-railway-app.railway.app/mix', {
   },
   body: JSON.stringify({
     stems: [
-      { url: 'https://storage.googleapis.com/stem1.wav' },
-      { url: 'https://storage.googleapis.com/stem2.wav' },
-      { url: 'https://storage.googleapis.com/stem3.wav' }
+      'https://storage.googleapis.com/stem1.wav',
+      'https://storage.googleapis.com/stem2.wav',
+      'https://storage.googleapis.com/stem3.wav'
     ],
     volumes: [1.0, 0.8, 0.6]
   })
@@ -160,7 +171,7 @@ export async function mixAudioStems(stemUrls, volumes) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      stems: stemUrls.map(url => ({ url })),
+      stems: stemUrls, // Now accepts array of URL strings directly
       volumes
     })
   });

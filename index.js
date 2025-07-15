@@ -123,17 +123,65 @@ app.post('/mix', async (req, res) => {
       });
     }
     
+    console.log(`[${requestId}] Received stems:`, stems);
     console.log(`[${requestId}] Processing ${stems.length} stems`);
+    
+    // Validate and normalize stems
+    const validatedStems = [];
+    for (let i = 0; i < stems.length; i++) {
+      const stem = stems[i];
+      console.log(`[${requestId}] Processing stem ${i}:`, typeof stem, stem);
+      
+      let stemUrl;
+      
+      // Handle both string URLs and object format
+      if (typeof stem === 'string') {
+        stemUrl = stem;
+      } else if (stem && typeof stem === 'object' && stem.url) {
+        stemUrl = stem.url;
+      } else {
+        console.error(`[${requestId}] Invalid stem at index ${i}:`, stem);
+        return res.status(400).json({ 
+          error: `Invalid stem at index ${i}. Expected string URL or object with url property`,
+          received: stem,
+          requestId 
+        });
+      }
+      
+      // Validate URL
+      if (typeof stemUrl !== 'string' || stemUrl.trim() === '') {
+        console.error(`[${requestId}] Invalid URL at index ${i}:`, stemUrl);
+        return res.status(400).json({ 
+          error: `Invalid URL at index ${i}. Expected non-empty string`,
+          received: stemUrl,
+          requestId 
+        });
+      }
+      
+      validatedStems.push(stemUrl.trim());
+    }
     
     // Download all stem files
     const inputFiles = [];
-    for (let i = 0; i < stems.length; i++) {
-      const stem = stems[i];
-      const filename = `${requestId}_stem_${i}.${stem.url.split('.').pop() || 'wav'}`;
+    for (let i = 0; i < validatedStems.length; i++) {
+      const stemUrl = validatedStems[i];
+      
+      // Extract file extension safely
+      let extension = 'wav'; // default
+      try {
+        const urlParts = stemUrl.split('.');
+        if (urlParts.length > 1) {
+          extension = urlParts.pop().split('?')[0]; // Remove query params if any
+        }
+      } catch (error) {
+        console.warn(`[${requestId}] Could not extract extension from URL: ${stemUrl}, using default 'wav'`);
+      }
+      
+      const filename = `${requestId}_stem_${i}.${extension}`;
       const filepath = path.join(tempDir, filename);
       
-      console.log(`[${requestId}] Downloading stem ${i + 1}/${stems.length}: ${stem.url}`);
-      await downloadFile(stem.url, filepath);
+      console.log(`[${requestId}] Downloading stem ${i + 1}/${validatedStems.length}: ${stemUrl}`);
+      await downloadFile(stemUrl, filepath);
       
       inputFiles.push(filepath);
       tempFiles.push(filepath);
