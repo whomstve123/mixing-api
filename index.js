@@ -33,12 +33,25 @@ app.get('/', (req, res) => {
 
 // Download file from URL
 async function downloadFile(url, filepath) {
+  console.log(`Downloading file from URL: "${url}" to filepath: "${filepath}"`);
+  
+  // Validate inputs
+  if (typeof url !== 'string' || url.trim() === '') {
+    throw new Error(`Invalid URL for download: ${typeof url} - "${url}"`);
+  }
+  
+  if (typeof filepath !== 'string' || filepath.trim() === '') {
+    throw new Error(`Invalid filepath for download: ${typeof filepath} - "${filepath}"`);
+  }
+  
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Failed to download: ${response.statusText}`);
+    throw new Error(`Failed to download: ${response.status} ${response.statusText}`);
   }
   const buffer = await response.buffer();
   fs.writeFileSync(filepath, buffer);
+  
+  console.log(`Successfully downloaded ${buffer.length} bytes to: "${filepath}"`);
 }
 
 // Mix audio files using ffmpeg
@@ -123,24 +136,38 @@ app.post('/mix', async (req, res) => {
       });
     }
     
-    console.log(`[${requestId}] Received stems:`, stems);
+    console.log(`[${requestId}] Received stems:`, JSON.stringify(stems, null, 2));
+    console.log(`[${requestId}] Received volumes:`, volumes);
     console.log(`[${requestId}] Processing ${stems.length} stems`);
     
     // Validate and normalize stems
     const validatedStems = [];
     for (let i = 0; i < stems.length; i++) {
       const stem = stems[i];
-      console.log(`[${requestId}] Processing stem ${i}:`, typeof stem, stem);
+      console.log(`[${requestId}] Processing stem ${i}:`, {
+        type: typeof stem,
+        value: stem,
+        isNull: stem === null,
+        isUndefined: stem === undefined,
+        stringValue: String(stem)
+      });
       
       let stemUrl;
       
       // Handle both string URLs and object format
       if (typeof stem === 'string') {
         stemUrl = stem;
+        console.log(`[${requestId}] Stem ${i} is string: "${stemUrl}"`);
       } else if (stem && typeof stem === 'object' && stem.url) {
         stemUrl = stem.url;
+        console.log(`[${requestId}] Stem ${i} is object with url: "${stemUrl}"`);
       } else {
-        console.error(`[${requestId}] Invalid stem at index ${i}:`, stem);
+        console.error(`[${requestId}] Invalid stem at index ${i}:`, {
+          type: typeof stem,
+          value: stem,
+          isNull: stem === null,
+          isUndefined: stem === undefined
+        });
         return res.status(400).json({ 
           error: `Invalid stem at index ${i}. Expected string URL or object with url property`,
           received: stem,
@@ -148,9 +175,21 @@ app.post('/mix', async (req, res) => {
         });
       }
       
-      // Validate URL
+      // Validate URL with detailed logging
+      console.log(`[${requestId}] Validating stemUrl for index ${i}:`, {
+        type: typeof stemUrl,
+        value: stemUrl,
+        isNull: stemUrl === null,
+        isUndefined: stemUrl === undefined,
+        length: stemUrl ? stemUrl.length : 'N/A'
+      });
+      
       if (typeof stemUrl !== 'string' || stemUrl.trim() === '') {
-        console.error(`[${requestId}] Invalid URL at index ${i}:`, stemUrl);
+        console.error(`[${requestId}] Invalid URL at index ${i}:`, {
+          type: typeof stemUrl,
+          value: stemUrl,
+          trimmed: stemUrl ? stemUrl.trim() : 'Cannot trim'
+        });
         return res.status(400).json({ 
           error: `Invalid URL at index ${i}. Expected non-empty string`,
           received: stemUrl,
@@ -158,29 +197,61 @@ app.post('/mix', async (req, res) => {
         });
       }
       
-      validatedStems.push(stemUrl.trim());
+      const trimmedUrl = stemUrl.trim();
+      console.log(`[${requestId}] Adding validated stem ${i}: "${trimmedUrl}"`);
+      validatedStems.push(trimmedUrl);
     }
+    
+    console.log(`[${requestId}] All stems validated. Final array:`, validatedStems);
     
     // Download all stem files
     const inputFiles = [];
     for (let i = 0; i < validatedStems.length; i++) {
       const stemUrl = validatedStems[i];
       
-      // Extract file extension safely
+      console.log(`[${requestId}] Processing validated stem ${i}:`, typeof stemUrl, stemUrl);
+      
+      // Extract file extension safely with detailed logging
       let extension = 'wav'; // default
       try {
+        // Double-check stemUrl is still a string
+        if (typeof stemUrl !== 'string') {
+          console.error(`[${requestId}] Validated stem is not a string at index ${i}:`, typeof stemUrl, stemUrl);
+          throw new Error(`Validated stem is not a string: ${typeof stemUrl}`);
+        }
+        
+        console.log(`[${requestId}] Extracting extension from URL: "${stemUrl}"`);
+        
+        // Safe split with logging
         const urlParts = stemUrl.split('.');
+        console.log(`[${requestId}] URL split into parts:`, urlParts);
+        
         if (urlParts.length > 1) {
-          extension = urlParts.pop().split('?')[0]; // Remove query params if any
+          const lastPart = urlParts.pop();
+          console.log(`[${requestId}] Last part before query removal: "${lastPart}"`);
+          
+          // Check if lastPart is valid before splitting
+          if (typeof lastPart === 'string' && lastPart.length > 0) {
+            extension = lastPart.split('?')[0]; // Remove query params if any
+            console.log(`[${requestId}] Extracted extension: "${extension}"`);
+          } else {
+            console.warn(`[${requestId}] Invalid last part, using default extension. lastPart:`, lastPart);
+          }
+        } else {
+          console.warn(`[${requestId}] No extension found in URL, using default 'wav'`);
         }
       } catch (error) {
-        console.warn(`[${requestId}] Could not extract extension from URL: ${stemUrl}, using default 'wav'`);
+        console.error(`[${requestId}] Error extracting extension from URL: ${stemUrl}`, error);
+        console.log(`[${requestId}] Using default extension 'wav'`);
+        extension = 'wav';
       }
       
       const filename = `${requestId}_stem_${i}.${extension}`;
       const filepath = path.join(tempDir, filename);
       
+      console.log(`[${requestId}] Final filename: "${filename}"`);
       console.log(`[${requestId}] Downloading stem ${i + 1}/${validatedStems.length}: ${stemUrl}`);
+      
       await downloadFile(stemUrl, filepath);
       
       inputFiles.push(filepath);
